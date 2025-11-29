@@ -40,7 +40,10 @@ def run_client(server_ip, server_port, num_messages, interval):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1.0)
 
-    seq = 1
+    msg = input("Enter a message to send: ")
+    sets = msg.split()
+    print(f"[CLIENT] You entered: {sets}")
+
 
     print(f"[RELIABLE CLIENT] Connected to {server_ip}:{server_port}")
     print(f"[RELIABLE CLIENT] Sending {num_messages} reliable packets...")
@@ -49,34 +52,34 @@ def run_client(server_ip, server_port, num_messages, interval):
     sent = 0
     acked = 0
 
-    for _ in range(num_messages):
+    for word in sets:
 
         # payload = user message
-        payload = f"MSG{seq}"
+        payload = word
 
         # apply your checksum
         payload_cs = add_checksum(payload)
 
         # final packet: SEQ|DATA+CS
-        packet = f"{seq}|{payload_cs}".encode()
+        packet = payload_cs.encode()
 
         while True:
             sock.sendto(packet, (server_ip, server_port))
             print(f"[CLIENT] Sent: {packet}")
 
             try:
-                data, _ = sock.recvfrom(2048)
+                data, = sock.recvfrom(2048)
                 resp = data.decode("utf-8", errors="replace")
 
-                if resp == f"ACK:{seq}":
-                    print(f"[CLIENT] ✓ ACK received for seq {seq}")
+                if resp == payload_cs[:2]:
+                    print(f"[CLIENT] ✓ Recieved valid checksum response: {resp}")
                     acked += 1
                     break
                 else:
-                    print(f"[CLIENT] ⚠ Unexpected ACK or corrupted: {resp}")
+                    print(f"[CLIENT] ⚠ Unexpected or corrupted checksum: {resp}")
 
             except socket.timeout:
-                print(f"[CLIENT] ⟳ Timeout -> Retransmitting seq {seq}")
+                print(f"[CLIENT] ⟳ Timeout -> Retransmitting seq")
                 continue
 
         seq += 1
