@@ -35,10 +35,14 @@ def run_server(port):
 
     print(f"[RELIABLE SERVER] Listening on port {port}")
     expected_seq = 1
+    last_acked = 0
+    received = {}  # store accepted payloads by seq
+    total_messages = None
 
     while True:
         data, addr = sock.recvfrom(65535)
-        payload = data[0]
+        # `data` is bytes; decode it to a str so slicing and checksum work correctly
+        payload = data.decode('utf-8', errors='replace')
 
  #       try:
 #          seq_str, payload = msg.split("|", 1)
@@ -49,25 +53,60 @@ def run_server(port):
 
         print(f"\n[SERVER] Received packet: {payload}")
 
-        # verify checksum
-        strdata = str(payload)
-        ok, clean_data = verify_checksum(strdata)
+        # Expect packet format: "seq/total|DATA+CS"
+        try:
+            header, body = payload.split("|", 1)
+            seq_str, total_str = header.split("/", 1)
+            seq = int(seq_str)
+            total = int(total_str)
+        except Exception:
+            print("[SERVER] ⚠ Invalid packet header -> Ignoring")
+            continue
+
+        # remember total for end-of-transmission detection
+        if total_messages is None:
+            total_messages = total
+
+        # verify checksum on the body (DATA+CS)
+        ok, clean_data = verify_checksum(body)
 
         if not ok:
             print("[SERVER] ❌ Checksum failed -> Ignoring packet")
-            # Send ACK for last valid packet to trigger resend
-            sock.sendto(strdata[-2:].encode, addr)
+            # Re-ACK last valid sequence so client can retransmit
+            sock.sendto(f"ACK:{last_acked}".encode(), addr)
             continue
 
-        if ok:
-            print(f"[SERVER] ✓ Accepted packet: {clean_data} sending response {strdata[-2:]} ")
-            sock.sendto(strdata[-2:].encode, addr)
+        # valid checksum
+        if seq < expected_seq:
+            # duplicate packet (already received)
+            print(f"[SERVER] ↺ Duplicate packet seq {seq} -> re-ACKing")
+            sock.sendto(f"ACK:{seq}".encode(), addr)
+            continue
+
+        if seq == expected_seq:
+            # in-order packet -> accept
+            print(f"[SERVER] ✓ Accepted packet {seq}: {clean_data}")
+            received[seq] = clean_data
+            last_acked = seq
+            sock.sendto(f"ACK:{seq}".encode(), addr)
             expected_seq += 1
 
-        #else:
-            # Out of order or duplicate
-            #print(f"[SERVER] ⚠ Wrong order. Expected {expected_seq}, got {seq}")
-            #sock.sendto(f"ACK:{expected_seq-1}".encode(), addr)
+            # check if we've received the entire message
+            if total_messages is not None and expected_seq > total_messages:
+                # reconstruct full message in order
+                parts = [received.get(i, "") for i in range(1, total_messages + 1)]
+                full_message = " ".join(parts)
+                print(f"\n[SERVER] === Full message reconstructed ===\n{full_message}\n")
+                # reset for next transmission
+                expected_seq = 1
+                last_acked = 0
+                received.clear()
+                total_messages = None
+            continue
+
+        # seq > expected_seq -> out-of-order: ask client to resend last accepted
+        print(f"[SERVER] ⚠ Out of order packet. Expected {expected_seq}, got {seq} -> re-ACKing {last_acked}")
+        sock.sendto(f"ACK:{last_acked}".encode(), addr)
 
 
 def main():

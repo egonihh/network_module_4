@@ -44,6 +44,8 @@ def run_client(server_ip, server_port, num_messages, interval):
     sets = msg.split()
     print(f"[CLIENT] You entered: {sets}")
 
+    # how many packets will we send for this message
+    total = len(sets)
 
     print(f"[RELIABLE CLIENT] Connected to {server_ip}:{server_port}")
     print(f"[RELIABLE CLIENT] Sending {num_messages} reliable packets...")
@@ -51,6 +53,7 @@ def run_client(server_ip, server_port, num_messages, interval):
 
     sent = 0
     acked = 0
+    seq = 1
 
     for word in sets:
 
@@ -60,23 +63,34 @@ def run_client(server_ip, server_port, num_messages, interval):
         # apply your checksum
         payload_cs = add_checksum(payload)
 
-        # final packet: SEQ|DATA+CS
-        packet = payload_cs.encode()
+        # final packet: "seq/total|DATA+CS"
+        packet = f"{seq}/{total}|{payload_cs}".encode()
 
         while True:
             sock.sendto(packet, (server_ip, server_port))
             print(f"[CLIENT] Sent: {packet}")
 
             try:
-                data = sock.recvfrom(2048)
-                print(data)
-                resp = data.decode()
-                if resp == payload_cs[-2:]:
-                    print(f"[CLIENT] ✓ Recieved valid checksum response: {resp}")
-                    acked += 1
-                    break
+                # recvfrom returns (bytes, addr) - unpack and decode the bytes
+                data, addr = sock.recvfrom(2048)
+                print(f"[CLIENT] Raw response: {data}")
+                resp = data.decode('utf-8', errors='replace')
+                # Expect ACK in the form 'ACK:<seq>'
+                if resp.startswith("ACK:"):
+                    try:
+                        ack_seq = int(resp.split(":", 1)[1])
+                    except:
+                        print(f"[CLIENT] ⚠ Malformed ACK: {resp}")
+                        continue
+                    if ack_seq == seq:
+                        print(f"[CLIENT] ✓ Received ACK for seq {ack_seq}")
+                        acked += 1
+                        break
+                    else:
+                        print(f"[CLIENT] ⚠ Received ACK for different seq: {ack_seq} (expecting {seq})")
+                        # keep waiting/retransmitting
                 else:
-                    print(f"[CLIENT] ⚠ Unexpected or corrupted checksum: {resp}")
+                    print(f"[CLIENT] ⚠ Unexpected response: {resp}")
 
             except socket.timeout:
                 print(f"[CLIENT] ⟳ Timeout -> Retransmitting msg")
