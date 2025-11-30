@@ -38,35 +38,36 @@ def run_server(port):
 
     while True:
         data, addr = sock.recvfrom(65535)
-        msg = data.decode("utf-8", errors="replace")
+        payload = data[0]
 
-        try:
-            seq_str, payload = msg.split("|", 1)
-            seq = int(seq_str)
-        except:
-            print(f"[SERVER] Invalid packet: {msg}")
-            continue
+ #       try:
+#          seq_str, payload = msg.split("|", 1)
+#           seq = int(seq_str)
+ #       except:
+  #          print(f"[SERVER] Invalid packet: {msg}")
+   #         continue
 
-        print(f"\n[SERVER] Received packet seq={seq}: {payload}")
+        print(f"\n[SERVER] Received packet: {payload}")
 
         # verify checksum
-        ok, clean_data = verify_checksum(payload)
+        strdata = str(payload)
+        ok, clean_data = verify_checksum(strdata)
 
         if not ok:
             print("[SERVER] ❌ Checksum failed -> Ignoring packet")
             # Send ACK for last valid packet to trigger resend
-            sock.sendto(f"ACK:{expected_seq-1}".encode(), addr)
+            sock.sendto(strdata[-2:].encode, addr)
             continue
 
-        if seq == expected_seq:
-            print(f"[SERVER] ✓ Accepted seq {seq}")
-            sock.sendto(f"ACK:{seq}".encode(), addr)
+        if ok:
+            print(f"[SERVER] ✓ Accepted packet: {clean_data} sending response {strdata[-2:]} ")
+            sock.sendto(strdata[-2:].encode, addr)
             expected_seq += 1
 
-        else:
+        #else:
             # Out of order or duplicate
-            print(f"[SERVER] ⚠ Wrong order. Expected {expected_seq}, got {seq}")
-            sock.sendto(f"ACK:{expected_seq-1}".encode(), addr)
+            #print(f"[SERVER] ⚠ Wrong order. Expected {expected_seq}, got {seq}")
+            #sock.sendto(f"ACK:{expected_seq-1}".encode(), addr)
 
 
 def main():

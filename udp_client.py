@@ -38,7 +38,7 @@ def verify_checksum(received_word):
 
 def run_client(server_ip, server_port, num_messages, interval):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(1.0)
+    sock.settimeout(2.0)
 
     msg = input("Enter a message to send: ")
     sets = msg.split()
@@ -68,10 +68,10 @@ def run_client(server_ip, server_port, num_messages, interval):
             print(f"[CLIENT] Sent: {packet}")
 
             try:
-                data, = sock.recvfrom(2048)
-                resp = data.decode("utf-8", errors="replace")
-
-                if resp == payload_cs[:2]:
+                data = sock.recvfrom(2048)
+                print(data)
+                resp = data.decode()
+                if resp == payload_cs[-2:]:
                     print(f"[CLIENT] ✓ Recieved valid checksum response: {resp}")
                     acked += 1
                     break
@@ -79,7 +79,7 @@ def run_client(server_ip, server_port, num_messages, interval):
                     print(f"[CLIENT] ⚠ Unexpected or corrupted checksum: {resp}")
 
             except socket.timeout:
-                print(f"[CLIENT] ⟳ Timeout -> Retransmitting seq")
+                print(f"[CLIENT] ⟳ Timeout -> Retransmitting msg")
                 continue
 
         seq += 1
